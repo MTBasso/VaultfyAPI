@@ -27,7 +27,7 @@ Follow these steps to set up and run SecurePass API:
 3. **Configure Environment Variables:**
 Create a .env file in the root directory and add your MongoDB connection string and other configuration details.
 
-Run the Application:
+4. Run the Application:
 ```
 npm start
 ```
