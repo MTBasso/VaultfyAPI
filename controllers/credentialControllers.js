@@ -1,7 +1,7 @@
 const User = require('../models/User')
 const Credential = require('../models/Credential');
 const mongoose = require('mongoose')
-const { encrypt, decrypt } = require('../utils/utils')
+const { encrypt, decrypt } = require('../helpers/utils')
 const { ApiError, BadRequestError, NotFoundError, UnauthorizedError } = require('../helpers/api-errors');
 
 

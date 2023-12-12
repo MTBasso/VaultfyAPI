@@ -1,5 +1,5 @@
 const User = require('../models/User')
-const { generateSecureString, isValidPassword } = require('../utils/utils')
+const { generateSecureString, isValidPassword } = require('../helpers/utils')
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { ApiError, BadRequestError, NotFoundError, UnauthorizedError } = require('../helpers/api-errors');
