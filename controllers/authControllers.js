@@ -8,7 +8,7 @@ exports.register = async (req, res) => {
     const { name, email, password } = req.body;
     const existingUser = await User.findOne({ email });
     if (existingUser) throw new NotFoundError('Erro bad request')
-    if (!isValidPassword(password)) return res.status(400).json({ message: "Invalid password. Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one digit, and one special character." });
+    if (!isValidPassword(password)) throw new BadRequestError("Invalid password. Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one digit, and one special character.");
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = await User.create({
         name,
