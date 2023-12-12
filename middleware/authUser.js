@@ -1,17 +1,14 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { NotFoundError, UnauthorizedError } = require('../helpers/api-errors');
 
-exports.authUser = (req, res, next) => {
+exports.authUser = async (req, res, next) => {
     const token = req.cookies.token;
-    if (!token) return res.status(401).json({ error: "The token is not available" })
-    jwt.verify(token, process.env.JWT_SECRETKEY, (err, decoded) => {
-        if (err) return res.status(401).json('Token is wrong')
-        User
-            .findOne({ email: decoded.email })
-            .then(user => {
-                req.user = user
-                next()
-            })
-            .catch(err => res.status(500).json({ message: "Internal Server Error While Fetching the User", error: err }))
-    })
+    if (!token) throw new UnauthorizedError("The token is not available")
+    const decoded = jwt.verify(token, process.env.JWT_SECRETKEY);
+    if (!decoded) throw new UnauthorizedError("The token is invalid")
+    const user = await User.findOne({ email: decoded.email })
+    if (!user) throw new NotFoundError('We could not find any users with this email.')
+    req.user = user;
+    next();
 }

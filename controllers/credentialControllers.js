@@ -2,93 +2,108 @@ const User = require('../models/User')
 const Credential = require('../models/Credential');
 const mongoose = require('mongoose')
 const { encrypt, decrypt } = require('../utils/utils')
+const { ApiError, BadRequestError, NotFoundError, UnauthorizedError } = require('../helpers/api-errors');
+
 
 exports.createCredential = async (req, res) => {
     const { service, username, password, notes } = req.body;
     const user = req.user;
     const hashedPassword = encrypt(password, user.secret);
-    Credential
-        .create({
-            service: service,
-            username: username,
-            password: hashedPassword,
-            notes: notes,
-            owner: user._id
+    const newCredential = await Credential.create({
+        service,
+        username,
+        password: hashedPassword,
+        notes,
+        owner: user._id
+    })
+    if (!newCredential) throw new ApiError("Internal Server Error While Creating the Credential")
+    const updatedUser = await User.findByIdAndUpdate(
+        user._id,
+        { $push: { credentials: newCredential._id } },
+        { new: true, useFindAndModify: false }
+    )
+    if (!updatedUser) throw new ApiError("Internal Server Error While Fetching and Updating the User")
+    res.status(200).json(
+        {
+            message: "Credential Created and User Updated Successfully",
+            user: {
+                name: updatedUser.name,
+                email: updatedUser.email,
+                credentials: updatedUser.credentials
+            },
+            newCredential: {
+                credentialId: newCredential._id,
+                service,
+                username,
+                notes
+            }
         })
-        .then(cred => {
-            User
-                .findByIdAndUpdate(
-                    user._id,
-                    { $push: { credentials: cred._id } },
-                    { new: true, useFindAndModify: false }
-                )
-                .then(user => res.status(200).json({ message: "Credential Created and User Updated Successfully", user: user }))
-                .catch(err => res.status(501).json({ message: "Internal Server Error While Fetching User", error: err }))
-        })
-        .catch(err => res.status(500).json({ message: "Internal Server Error While Creating the Credential", error: err }))
 }
 
 exports.fetchCredential = async (req, res) => {
     const { credId } = req.body;
+    if (!credId || !mongoose.Types.ObjectId.isValid(credId)) throw new BadRequestError("Invalid Credential Id")
     const user = req.user;
-    Credential
-        .findById(credId)
-        .then(cred => {
-            let dispCred = {
-                service: cred.service,
-                username: cred.username,
-                password: decrypt(cred.password, user.secret),
-                notes: cred.notes,
+    const credential = await Credential.findById(credId);
+    if (!credential) throw new NotFoundError('Credential Not Found')
+    res.status(200).json(
+        {
+            message: "Credential Fetched Successfully",
+            credential: {
+                service: credential.service,
+                username: credential.username,
+                password: decrypt(credential.password, user.secret),
+                notes: credential.notes
             }
-            return res.status(200).json(dispCred)
         })
-        .catch(err => res.status(500).json({ message: "Internal Server Error While Fetching the Credential", error: err }))
 }
 
 exports.updateCredential = async (req, res) => {
     const { credId, service, username, password, notes } = req.body;
     const user = req.user;
-    if (!mongoose.Types.ObjectId.isValid(credId)) return res.status(400).json({ message: "Invalid Credential Id" })
-    Credential
-        .findById(credId)
-        .then(oldCred => {
-            if (!oldCred) return res.status(404).json({ message: "Credential not Found" })
-            const updatedFields = {
-                service: service,
-                username: username,
-                notes: notes
-            };
-
-            if (password) {
-                updatedFields.password = encrypt(password, user.secret);
+    let encryptedNewPassword;
+    if (!credId || !mongoose.Types.ObjectId.isValid(credId)) throw new BadRequestError("Invalid Credential Id")
+    const credential = await Credential.findById(credId)
+    if (!credential) throw new NotFoundError("Credential Not Found")
+    if (password) encryptedNewPassword = encrypt(password, user.secret);
+    credential.service = service;
+    credential.username = username;
+    credential.password = encryptedNewPassword;
+    credential.notes = notes;
+    const updatedCredential = await credential.save();
+    if (!updatedCredential) throw new ApiError("Error While Updating the Credential");
+    res.status(200).json(
+        {
+            message: "Credential Updated Successfully",
+            credential: {
+                service: updatedCredential.service,
+                username: updatedCredential.username,
+                password: decrypt(updatedCredential.password, user.secret),
+                notes: updatedCredential.notes
             }
-
-            Credential
-                .findByIdAndUpdate(credId, updatedFields, { new: true, useFindAndModify: false })
-                .then(updatedCred => res.status(200).json({ message: "Credential Updated Successfully", credential: updatedCred }))
-                .catch(err => res.status(500).json({ message: "Internal Server Error While Updating the Credential", error: err }))
         })
-        .catch(err => res.status(500).json({ message: "Internal Server Error While Validating the Credential Id", error: err }))
 }
 
 exports.deleteCredential = async (req, res) => {
     const { credId } = req.body;
     const user = req.user;
-    if (!credId) return res.status(400).json({ message: "Credential Id is required" })
-    if (!mongoose.Types.ObjectId.isValid(credId)) return res.status(400).json({ message: "Invalid Credential Id" })
+    if (!credId || !mongoose.Types.ObjectId.isValid(credId)) throw new BadRequestError("Invalid Credential Id")
     const deleteQuery = Credential.findByIdAndDelete(credId);
-    deleteQuery
-        .exec()
-        .then(deletedCredential => {
-            if (!deletedCredential) return res.status(404).json({ message: "Credential Not Found" })
-            User
-                .findByIdAndUpdate(
-                    user._id,
-                    { $pull: { credentials: credId } },
-                    { new: true, useFindAndModify: false }
-                )
-                .then(updatedUser => res.status(200).json({ message: "Credential Deleted Successfully", user: updatedUser }))
-                .catch(err => res.status(500).json({ message: "Internal Server Error While Updating User", error: err }))
+    const deletedCredential = await deleteQuery.exec()
+    if (!deletedCredential) throw new NotFoundError("Credential Not Found")
+    const updatedUser = await User.findByIdAndUpdate(
+        user._id,
+        { $pull: { credentials: credId } },
+        { new: true, useFindAndModify: false }
+    )
+    if (!updatedUser) throw new ApiError("Error While Updating the User");
+    res.status(200).json(
+        {
+            message: "Credential Deleted Successfully",
+            user: {
+                name: updatedUser.name,
+                email: updatedUser.email,
+                credentials: updatedUser.credentials
+            }
         })
-        .catch(err => res.status(500).json({ message: "Internal Server Error While Deleting the Credential", error: err }))
 }
